@@ -5,8 +5,10 @@ from os.path import isfile, join
 import subprocess as sb
 import threading
 
+threadNum = int(input("Number of threads: "))
 programName = input("Tested program: ")
 testRelPath = input("Test path: ")
+shouldPrint = input("Are the discrepancies to be printed? (Y/N)") == "Y"
 path = "C:/Users/francik mateusz/Desktop/cpp/"
 testPath = path + "tests/"
 testDir = testPath + programName + testRelPath + "/in/"
@@ -25,8 +27,9 @@ def displayResults(num, file, received, expected, time):
     timeStr = "{:.4f}".format(time)
     if received != expected:
         print(f"{bcolors.FAIL}TEST #{num}: {file}, {timeStr}s{bcolors.ENDC}")
-        print(f"\t Received: {received}")
-        print(f"\t Expected: {expected}")
+        if shouldPrint:
+            print(f"\t Received: {received}")
+            print(f"\t Expected: {expected}")
         return 0
     else:
         print(f"{bcolors.OKGREEN}TEST #{num}: {file}, {timeStr}s{bcolors.ENDC}")
@@ -48,24 +51,45 @@ class bcolors:
 passed = 0
 smallestSize = float('inf')
 smallestFile = ""
-for num in range(len(testFiles)):
-    with open(testDir + testFiles[num]) as f:
-        lines = f.read()
-        t = threading.Timer(10, timeout)
-        proc = sb.Popen(path + programName + ".exe", shell=True, stdin=sb.PIPE, stdout=sb.PIPE,
-                        stderr=sb.PIPE, text=True)
-        begin = time.time()
-        out, err = proc.communicate(lines)
-        end = time.time()
-        t.cancel()
-        with open(answerDir + answerFiles[num]) as f:
-            passMod = displayResults(num, testFiles[num], out.strip(), f.read().strip(), end - begin)
-            passed += passMod
-            if passMod == 0:
-                sizes = int(re.search(r'\d+', lines).group())
-                if sizes < smallestSize:
-                    smallestSize = sizes
-                    smallestFile = testFiles[num]
+lock = threading.Lock()
+curIn = 0
+
+
+def calcForFile():
+    global smallestFile, smallestSize, passed, curIn
+    num = 0
+    with lock:
+        num = curIn
+        curIn += 1
+    while num < len(testFiles):
+        with open(testDir + testFiles[num]) as f:
+            lines = f.read()
+            proc = sb.Popen(path + programName + ".exe", shell=True, stdin=sb.PIPE, stdout=sb.PIPE,
+                            stderr=sb.PIPE, text=True)
+            begin = time.time()
+            out, err = proc.communicate(lines)
+            end = time.time()
+            with open(answerDir + answerFiles[num]) as f:
+                passMod = displayResults(num+1, testFiles[num], out.strip(), f.read().strip(), end - begin)
+                with lock:
+                    passed += passMod
+                    if passMod == 0:
+                        sizes = int(re.search(r'\d+', lines).group())
+                        if sizes < smallestSize:
+                            smallestSize = sizes
+                            smallestFile = testFiles[num]
+        with lock:
+            num = curIn
+            curIn += 1
+
+threads = list()
+for num in range(2):
+    t = threading.Thread(target=calcForFile)
+    threads.append(t)
+    t.start()
+
+for index, thread in enumerate(threads):
+    thread.join()
 
 print(f"{bcolors.OKCYAN}{passed} out of {len(testFiles)} passed{bcolors.ENDC}")
 print(f"{bcolors.OKBLUE}Smallest file: {smallestFile} ({smallestSize}){bcolors.ENDC}")
