@@ -83,7 +83,7 @@ def calcForFile():
             curIn += 1
 
 threads = list()
-for num in range(2):
+for num in range(threadNum):
     t = threading.Thread(target=calcForFile)
     threads.append(t)
     t.start()
